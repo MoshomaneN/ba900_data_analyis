@@ -1,61 +1,46 @@
 import pandas as pd
-import re
 
-def clean_and_categorize(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    drop_cols = ['date,august', '2025']
-    df = df.drop(columns=[c for c in drop_cols if c in df.columns], errors='ignore')
+def clean_ba900(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Cleans and filters BA900 dataset for analysis.
+    Focuses on CIB-related items (FCA, FEA, CFC, etc.)
+    and ensures consistent column naming.
 
-    df = df.rename(columns={'date': 'line_description', 'august_2025': 'amount'})
-    df['amount'] = pd.to_numeric(df['amount'], errors='coerce').fillna(0)
+    Args:
+        df (pd.DataFrame): Raw combined DataFrame.
 
-    # CIB categories
-    category_map = {
-        'corporate_loan': ['loan', 'advance', 'corporate'],
-        'corporate_deposit': ['deposit', 'corporate'],
-        'fca': ['foreign_currency_asset', 'fca'],
-        'cfc': ['foreign_currency_commitment', 'cfc']
-    }
-    df['cib_category'] = None
-    for category, keywords in category_map.items():
-        mask = df['line_description'].astype(str).str.lower().str.contains('|'.join(keywords))
-        df.loc[mask, 'cib_category'] = category
-    df = df[df['cib_category'].notnull()]
+    Returns:
+        pd.DataFrame: Cleaned and filtered DataFrame.
+    """
 
-    # Major banks
-    bank_map = {
-        'standard bank': 'STANDARD BANK',
-        'nedbank': 'NEDBANK',
-        'absa': 'ABSA',
-        'first rand': 'FIRST RAND'
-    }
-    df['institution'] = None
-    for k, v in bank_map.items():
-        mask = df['line_description'].str.lower().str.contains(k)
-        df.loc[mask, 'institution'] = v
-    df = df[df['institution'].notnull()]
+    # --- 1️⃣ Standardize column names ---
+    df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
 
-    # Report date
-    def extract_date(file_name):
-        match = re.search(r'(\d{4}-\d{2}-\d{2})', file_name)
-        return pd.to_datetime(match.group(1)) if match else pd.NaT
-    df['report_date'] = df['source_file'].apply(extract_date)
+    # --- 2️⃣ Identify possible description column ---
+    possible_desc_cols = ["description", "line_description", "item", "account_description", "line"]
+    desc_col = next((col for col in possible_desc_cols if col in df.columns), None)
 
-    # Transaction type
-    transactional_keywords = ['loan', 'advance', 'deposit', 'transfer', 'fca', 'cfc']
-    non_transactional_keywords = ['investment', 'securities', 'bond', 'derivative', 'provision', 'reserve']
+    if not desc_col:
+        raise KeyError(f"No description column found. Checked: {possible_desc_cols}")
 
-    def classify_transactional(line_desc: str):
-        line = str(line_desc).lower()
-        if any(k in line for k in transactional_keywords):
-            return 'transactional'
-        elif any(k in line for k in non_transactional_keywords):
-            return 'non_transactional'
-        else:
-            return 'unknown'
+    # --- 3️⃣ Filter for CIB-related entries ---
+    keywords = ["fca", "fea", "cfc", "corporate", "investment", "foreign currency"]
+    mask = df[desc_col].astype(str).str.lower().str.contains("|".join(keywords))
+    cib_df = df[mask].copy()
 
-    df['transaction_type'] = df['line_description'].apply(classify_transactional)
-    df = df[df['transaction_type'] != 'unknown']
+    # --- 4️⃣ Add Transactional Flag ---
+    transactional_keywords = ["deposit", "loan", "transaction", "cash", "trade", "funds"]
+    cib_df["is_transactional"] = cib_df[desc_col].astype(str).str.lower().str.contains("|".join(transactional_keywords))
 
-    print(f"✅ Cleaned DataFrame: {len(df)} rows for major SA banks with transaction type")
-    return df
+    # --- 5️⃣ Add Metadata if Missing ---
+    if "institution" not in cib_df.columns:
+        cib_df["institution"] = "UNKNOWN"
+    if "date" not in cib_df.columns:
+        cib_df["date"] = pd.NaT
+
+    # --- 6️⃣ Cleanup numeric columns ---
+    for col in cib_df.select_dtypes(include=["object"]).columns:
+        # Convert number-like columns safely
+        cib_df[col] = cib_df[col].replace(",", "", regex=True)
+
+    return cib_df
