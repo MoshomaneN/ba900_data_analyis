@@ -1,15 +1,15 @@
-from downloader.extractor import extract_ba900_zip
-from downloader.loader import load_ba900_csv,load_all_ba900_files
+#from downloader.extractor import extract_ba900_zip
+#from downloader.loader import load_ba900_csv,load_all_ba900_files
 #from cleaner.cleaner import clean_and_categorize
 from aggregator.aggregator import aggregate_market_share
 from visualizer.plotter import plot_market_share_trends, plot_stacked_market_share
 
-zip_path = "data/raw/BA900_2025-08-01_zipcsv.zip"
+#zip_path = "data/raw/BA900_2025-08-01_zipcsv.zip"
 
 # Step 1 & 2
 
-df = load_all_ba900_files("data/extracted")
-print(df.head())
+#df = load_all_ba900_files("data/extracted")
+#print(df.head())
 # Step 3
 #cib_df = clean_and_categorize(df)
 
@@ -21,6 +21,20 @@ print(df.head())
 #plot_stacked_market_share(market_share_df)
 
 
+from downloader.extractor import extract_all_zips
+
+def main():
+    zip_folder = "data/raw"
+    extract_target = "data/extracted"
+
+    extracted = extract_all_zips(zip_folder, extract_target)
+
+    print("\n=== FINAL OUTPUT ===")
+    for f in extracted:
+        print(f)
+
+if __name__ == "__main__":
+    main()
 
 
 
